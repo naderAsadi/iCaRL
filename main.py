@@ -17,6 +17,7 @@ model=iCaRLmodel(numclass,feature_extractor,batch_size,task_size,memory_size,epo
 #model.model.load_state_dict(torch.load('model/ownTry_accuracy:84.000_KNN_accuracy:84.000_increment:10_net.pkl'))
 
 for i in range(10):
+    print(f"Task {i}\n")
     model.beforeTrain()
     accuracy=model.train()
     model.afterTrain(accuracy)

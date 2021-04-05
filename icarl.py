@@ -9,7 +9,7 @@ from models import Network
 from iCIFAR100 import iCIFAR100
 from torch.utils.data import DataLoader
 
-device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def get_one_hot(target,num_class):
     one_hot=torch.zeros(target.shape[0],num_class).to(device)
@@ -49,8 +49,8 @@ class iCaRLmodel:
                                                 transforms.ToTensor(),
                                                 transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))])
         
-        self.train_dataset = iCIFAR100('dataset', transform=self.train_transform, download=True)
-        self.test_dataset = iCIFAR100('dataset', test_transform=self.test_transform, train=False, download=True)
+        self.train_dataset = iCIFAR100('/opt/datasets', transform=self.train_transform, download=True)
+        self.test_dataset = iCIFAR100('/opt/datasets', test_transform=self.test_transform, train=False, download=True)
 
         self.batchsize = batch_size
         self.memory_size=memory_size
@@ -134,7 +134,7 @@ class iCaRLmodel:
                 opt.zero_grad()
                 loss_value.backward()
                 opt.step()
-                print('epoch:%d,step:%d,loss:%.3f' % (epoch, step, loss_value.item()))
+                # print('epoch:%d,step:%d,loss:%.3f' % (epoch, step, loss_value.item()))
             accuracy = self._test(self.test_loader, 1)
             print('epoch:%d,accuracy:%.3f' % (epoch, accuracy))
         return accuracy
@@ -155,7 +155,8 @@ class iCaRLmodel:
         self.model.train()
         return accuracy
 
-
+    # TODO: Break loss into new_loss + old_loss
+    # TODO: Train with simple replay
     def _compute_loss(self, indexs, imgs, target):
         output=self.model(imgs)
         target = get_one_hot(target, self.numclass)
@@ -184,7 +185,7 @@ class iCaRLmodel:
         self.model.train()
         KNN_accuracy=self._test(self.test_loader,0)
         print("NMS accuracy："+str(KNN_accuracy.item()))
-        filename='model/accuracy:%.3f_KNN_accuracy:%.3f_increment:%d_net.pkl' % (accuracy, KNN_accuracy, i + 10)
+        filename='./snapshots/accuracy:%.3f_KNN_accuracy:%.3f_increment:%d_net.pkl' % (accuracy, KNN_accuracy, i + 10)
         torch.save(self.model,filename)
         self.old_model=torch.load(filename)
         self.old_model.to(device)

@@ -2,7 +2,6 @@ from torchvision.datasets import CIFAR100
 import numpy as np
 from PIL import Image
 
-
 class iCIFAR100(CIFAR100):
     def __init__(self,root,
                  train=True,

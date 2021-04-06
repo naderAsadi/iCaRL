@@ -170,6 +170,26 @@ class iCaRLmodel:
             target[..., :old_task_size] = old_target
             return F.binary_cross_entropy_with_logits(output, target)
 
+    # Separate distillation of base classes from learning new samples
+    def _compute_loss_separate(self, indexs, imgs, target):
+        output=self.model(imgs)
+        target_onehot = get_one_hot(target, self.numclass)
+        output, target_onehot = output.to(device), target_onehot.to(device)
+        if self.old_model == None:
+            return F.binary_cross_entropy_with_logits(output, target_onehot)
+        else:
+            # Find index of old task samples
+            idx = (target < self.numclass - self.task_size).squeeze().nonzero().squeeze()
+            old_imgs = imgs[idx]
+
+            #old_target = torch.tensor(np.array([self.old_model_output[index.item()] for index in indexs]))
+            old_target=torch.sigmoid(self.old_model(old_imgs))
+            #old_task_size = old_target.shape[1]
+
+            #target_onehot[..., :old_task_size] = old_target
+            target_onehot[idx] = old_target # Replace base class labels with old predictions
+            return F.binary_cross_entropy_with_logits(output, target_onehot)
+
 
     # change the size of examplar
     def afterTrain(self,accuracy):

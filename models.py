@@ -10,10 +10,10 @@ class Network(nn.Module):
         super(Network, self).__init__()
         self.feature = feature_extractor
         #TODO: Add two layer projection head
-        self.proj_head = nn.Sequential([
+        self.proj_head = nn.Sequential(
             nn.Linear(feature_extractor.fc.in_features, feature_extractor.fc.in_features),
             nn.Linear(feature_extractor.fc.in_features, feature_extractor.fc.in_features)
-        ])
+        )
 
         self.fc = nn.Linear(feature_extractor.fc.in_features, numclass, bias=True)
 

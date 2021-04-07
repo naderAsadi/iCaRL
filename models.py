@@ -10,10 +10,16 @@ class Network(nn.Module):
         super(Network, self).__init__()
         self.feature = feature_extractor
         #TODO: Add two layer projection head
+        self.proj_head = nn.Sequential([
+            nn.Linear(feature_extractor.fc.in_features, feature_extractor.fc.in_features),
+            nn.Linear(feature_extractor.fc.in_features, feature_extractor.fc.in_features)
+        ])
+
         self.fc = nn.Linear(feature_extractor.fc.in_features, numclass, bias=True)
 
     def forward(self, input):
         x = self.feature(input)
+        x = self.proj_head(x)
         x = self.fc(x)
         return x
 
@@ -28,4 +34,4 @@ class Network(nn.Module):
         self.fc.bias.data[:out_feature] = bias
 
     def feature_extractor(self,inputs):
-        return self.feature(inputs)
+        return self.proj_head(self.feature(inputs))

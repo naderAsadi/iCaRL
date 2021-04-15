@@ -1,69 +1,63 @@
-import torch.nn as nn
-import torch
-from torchvision import transforms
-import numpy as np
-from torch.nn import functional as F
 from PIL import Image
-import torch.optim as optim
-from models import Network
-from iCIFAR100 import iCIFAR100
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
+import torch.optim as optim
+from torchvision import transforms
+
+from models.models import Network
+from data.utils import get_train_dataset, get_test_dataset
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def get_one_hot(target,num_class):
-    one_hot=torch.zeros(target.shape[0],num_class).to(device)
-    one_hot=one_hot.scatter(dim=1,index=target.long().view(-1,1),value=1.)
+    one_hot = torch.zeros(target.shape[0],num_class).to(device)
+    one_hot = one_hot.scatter(dim=1,index=target.long().view(-1,1),value=1.)
     return one_hot
+
 
 class iCaRLmodel:
 
-    def __init__(self,numclass,feature_extractor,batch_size,task_size,memory_size,epochs,learning_rate):
-
+    def __init__(self, args, task_classes, feature_extractor):
         super(iCaRLmodel, self).__init__()
-        self.epochs=epochs
-        self.learning_rate=learning_rate
-        self.model = Network(numclass,feature_extractor)
+        self.epochs = args["epochs"]
+        self.learning_rate = args["lr"]
+        self.batchsize = args["batchsize"]
+        self.memory_size = args["memorysize"]
+        
+        self.task = 0 # Current task id
+        self.task_classes = task_classes # List of sequential task sizes, e.g. [50,10,10,10,10]
+        self.numclass = sum(self.task_classes[: self.task + 1]) # Classes seen so far
+        self.task_size = self.task_classes[self.task] # Number of classes in current task
+
         self.exemplar_set = []
         self.class_mean_set = []
-        self.numclass = numclass
+
+        # Data
         self.transform = transforms.Compose([#transforms.Resize(img_size),
                                             transforms.ToTensor(),
                                             transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))])
-        self.old_model = None
-
-        #TODO: Add more augmentations
-        self.train_transform = transforms.Compose([#transforms.Resize(img_size),
-                                                transforms.RandomCrop((32,32),padding=4),
-                                                transforms.RandomHorizontalFlip(p=0.5),
-                                                transforms.ColorJitter(brightness=0.24705882352941178),
-                                                transforms.ToTensor(),
-                                                transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))])
-        
-        self.test_transform = transforms.Compose([#transforms.Resize(img_size),
-                                                transforms.ToTensor(),
-                                                transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))])
-        
-        self.classify_transform=transforms.Compose([transforms.RandomHorizontalFlip(p=1.),
+        self.classify_transform=transforms.Compose([transforms.RandomHorizontalFlip(p=1.), #TODO: Remove augmentation for classification 
                                                 #transforms.Resize(img_size),
                                                 transforms.ToTensor(),
                                                 transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))])
-        
-        self.train_dataset = iCIFAR100('/opt/datasets', transform=self.train_transform, download=True)
-        self.test_dataset = iCIFAR100('/opt/datasets', test_transform=self.test_transform, train=False, download=True)
-
-        self.batchsize = batch_size
-        self.memory_size=memory_size
-        self.task_size=task_size
-
+        self.train_dataset = get_train_dataset(data_path="/opt/datasets")
+        self.test_dataset = get_test_dataset(data_path="/opt/datasets")
         self.train_loader=None
         self.test_loader=None
+
+        # Models
+        self.model = Network(self.numclass, feature_extractor())
+        self.old_model = None
 
     # get incremental train data
     # incremental
     def beforeTrain(self):
         self.model.eval()
-        classes=[self.numclass-self.task_size,self.numclass]
+        #classes=[self.numclass-self.task_size,self.numclass]
+        classes = [self.numclass - self.task_size, self.numclass]
         self.train_loader,self.test_loader=self._get_train_and_test_dataloader(classes)
         if self.numclass>self.task_size:
             self.model.Incremental_learning(self.numclass)
@@ -104,29 +98,28 @@ class iCaRLmodel:
         for epoch in range(self.epochs):
             if epoch == 48:
                 if self.numclass==self.task_size:
-                    print(1)
-                    opt = optim.SGD(self.model.parameters(), lr=1.0/5, weight_decay=0.00001)
+                    opt = optim.SGD(self.model.parameters(), lr=self.learning_rate / 5, weight_decay=0.00001)
                 else:
                     for p in opt.param_groups:
                         p['lr'] =self.learning_rate/ 5
                     #opt = optim.SGD(self.model.parameters(), lr=self.learning_rate/ 5,weight_decay=0.00001,momentum=0.9,nesterov=True,)
-                print("change learning rate:%.3f" % (self.learning_rate / 5))
+                print(f"Change learning rate: {self.learning_rate / 5}")
             elif epoch == 62:
                 if self.numclass>self.task_size:
                     for p in opt.param_groups:
                         p['lr'] =self.learning_rate/ 25
                     #opt = optim.SGD(self.model.parameters(), lr=self.learning_rate/ 25,weight_decay=0.00001,momentum=0.9,nesterov=True,)
                 else:
-                    opt = optim.SGD(self.model.parameters(), lr=1.0/25, weight_decay=0.00001)
-                print("change learning rate:%.3f" % (self.learning_rate / 25))
+                    opt = optim.SGD(self.model.parameters(), lr=self.learning_rate / 25, weight_decay=0.00001)
+                print(f"Change learning rate: {self.learning_rate / 25}")
             elif epoch == 80:
                 if self.numclass==self.task_size:
-                    opt = optim.SGD(self.model.parameters(), lr=1.0 / 125,weight_decay=0.00001)
+                    opt = optim.SGD(self.model.parameters(), lr=self.learning_rate / 125,weight_decay=0.00001)
                 else:
                     for p in opt.param_groups:
                         p['lr'] =self.learning_rate/ 125
                     #opt = optim.SGD(self.model.parameters(), lr=self.learning_rate / 125,weight_decay=0.00001,momentum=0.9,nesterov=True,)
-                print("change learning rate:%.3f" % (self.learning_rate / 100))
+                print(f"Change learning rate: {self.learning_rate / 125}")
             for step, (indexs, images, target) in enumerate(self.train_loader):
                 images, target = images.to(device), target.to(device)
                 #output = self.model(images)
@@ -154,6 +147,9 @@ class iCaRLmodel:
         accuracy = 100 * correct / total
         self.model.train()
         return accuracy
+
+    def augment_with_memory(self, imgs, target):
+        pass
 
     # TODO: Break loss into new_loss + old_loss
     # TODO: Train with simple replay
@@ -194,18 +190,31 @@ class iCaRLmodel:
     # change the size of examplar
     def afterTrain(self,accuracy):
         self.model.eval()
-        m=int(self.memory_size/self.numclass)
+        m = int(self.memory_size / self.numclass)
         self._reduce_exemplar_sets(m)
-        for i in range(self.numclass-self.task_size,self.numclass):
-            print('construct class %s examplar:'%(i),end='')
-            images=self.train_dataset.get_image_class(i)
+
+        # for i in range(self.task + 1):
+        #     print(f'Construct class {i} examplar:',end='')
+        #     images = self.train_dataset.get_image_class(self.task_classes[i])
+        #     self._construct_exemplar_set(images, m)
+
+        for i in range(self.numclass - self.task_size, self.numclass):
+            print(f'Construct class {i} examplar:',end='')
+            images = self.train_dataset.get_image_class(i)
             self._construct_exemplar_set(images,m)
-        self.numclass+=self.task_size
+
+        # Update number of seen classes
+        self.task += 1
+        #self.numclass += self.task_size
+        self.numclass = sum(self.task_classes[: self.task + 1]) # Classes seen so far
+        self.task_size = self.task_classes[self.task] # Number of classes in current task
+ 
+
         self.compute_exemplar_class_mean()
         self.model.train()
-        KNN_accuracy=self._test(self.test_loader,0)
+        KNN_accuracy = self._test(self.test_loader,0)
         print("NMS accuracy："+str(KNN_accuracy.item()))
-        filename='./snapshots/accuracy:%.3f_KNN_accuracy:%.3f_increment:%d_net.pkl' % (accuracy, KNN_accuracy, i + 10)
+        filename = './snapshots/accuracy:%.3f_KNN_accuracy:%.3f_increment:%d_net.pkl' % (accuracy, KNN_accuracy, i + 10)
         torch.save(self.model,filename)
         self.old_model=torch.load(filename)
         self.old_model.to(device)
@@ -236,8 +245,6 @@ class iCaRLmodel:
             self.exemplar_set[index] = self.exemplar_set[index][:m]
             print('Size of class %d examplar: %s' % (index, str(len(self.exemplar_set[index]))))
 
-
-
     def Image_transform(self, images, transform):
         data = transform(Image.fromarray(images[0])).unsqueeze(0)
         for index in range(1, len(images)):
@@ -251,16 +258,15 @@ class iCaRLmodel:
         class_mean = np.mean(feature_extractor_output, axis=0)
         return class_mean, feature_extractor_output
 
-
     def compute_exemplar_class_mean(self):
         self.class_mean_set = []
         for index in range(len(self.exemplar_set)):
             print("compute the class mean of %s"%(str(index)))
-            exemplar=self.exemplar_set[index]
+            exemplar = self.exemplar_set[index]
             #exemplar=self.train_dataset.get_image_class(index)
-            class_mean, _ = self.compute_class_mean(exemplar, self.transform)
-            class_mean_,_=self.compute_class_mean(exemplar,self.classify_transform)
-            class_mean=(class_mean/np.linalg.norm(class_mean)+class_mean_/np.linalg.norm(class_mean_))/2
+            class_mean, _  = self.compute_class_mean(exemplar, self.transform)
+            class_mean_,_ = self.compute_class_mean(exemplar,self.classify_transform)
+            class_mean = (class_mean/np.linalg.norm(class_mean)+class_mean_/np.linalg.norm(class_mean_))/2
             self.class_mean_set.append(class_mean)
 
     def classify(self, test):

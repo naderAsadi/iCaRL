@@ -6,14 +6,14 @@ class Network(nn.Module):
     Args:
         nn ([type]): [description]
     """
-    def __init__(self, numclass, feature_extractor):
+    def __init__(self, numclass, feature_extractor, proj_size=128):
         super(Network, self).__init__()
         self.feature = feature_extractor
         #TODO: Add two layer projection head
-        self.proj_head = nn.Sequential([
+        self.proj_head = nn.Sequential(
             nn.Linear(feature_extractor.fc.in_features, feature_extractor.fc.in_features),
             nn.Linear(feature_extractor.fc.in_features, feature_extractor.fc.in_features)
-        ])
+        )
 
         self.fc = nn.Linear(feature_extractor.fc.in_features, numclass, bias=True)
 

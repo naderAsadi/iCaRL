@@ -1,23 +1,40 @@
 import torch
 
 from icarl import iCaRLmodel
-from resnet import resnet18_cbam, resnet34_cbam
+from parser import get_parser
+from models.resnet import resnet18_cbam, resnet34_cbam
 
 
-numclass=10
-feature_extractor=resnet18_cbam() #TODO: Change backbone to resnet34
-img_size=32
-batch_size=128
-task_size=10
-memory_size=2000
-epochs=100
-learning_rate=0.1
+def main(args):
+    convnet_types = {
+        'resnet18': resnet18_cbam,
+        'resnet34': resnet34_cbam
+    }
+    model_types = {
+        'icarl': iCaRLmodel
+    }
+    class_settings = {
+        '1': [50] + 50*[1],
+        '2': [50] + 25*[2],
+        '5': [50] + 10*[5],
+        '10': [50] + 5*[10]
+    }
 
-model=iCaRLmodel(numclass,feature_extractor,batch_size,task_size,memory_size,epochs,learning_rate)
-#model.model.load_state_dict(torch.load('model/ownTry_accuracy:84.000_KNN_accuracy:84.000_increment:10_net.pkl'))
+    task_classes = class_settings[args['increment']]
+    #task_classes = [10] * 10
+    feature_extractor = convnet_types[args['convnet']] #TODO: Move this to iCaRL __init__
+    img_size = 32
+    model = iCaRLmodel(args, task_classes=task_classes, feature_extractor=feature_extractor)
 
-for i in range(10):
-    print(f"Task {i}\n")
-    model.beforeTrain()
-    accuracy=model.train()
-    model.afterTrain(accuracy)
+    for i in range(len(task_classes)):
+        print(f"Task {i}\n")
+        model.beforeTrain()
+        accuracy=model.train()
+        model.afterTrain(accuracy)
+    
+
+
+if __name__ == '__main__':
+    args = get_parser().parse_args()
+    args = vars(args) 
+    main(args)
